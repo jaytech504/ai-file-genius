@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { HelpCircle, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
+import { HelpCircle, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
 import { cn } from '@/lib/utils';
 import { QuizQuestion } from '@/types';
 import { toast } from 'sonner';
+import { generateQuiz } from '@/lib/processingService';
 
 interface QuizViewProps {
   fileId: string;
@@ -14,8 +15,40 @@ interface QuizViewProps {
 export function QuizView({ fileId }: QuizViewProps) {
   const quiz = useFileStore((state) => state.getQuiz(fileId));
   const updateQuizAnswer = useFileStore((state) => state.updateQuizAnswer);
+  const extractedText = useFileStore((state) => state.getExtractedText(fileId));
+  const transcript = useFileStore((state) => state.getTranscript(fileId));
+  const setQuiz = useFileStore((state) => state.setQuiz);
+  
   const [showAnswers, setShowAnswers] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerate = async () => {
+    const text = extractedText || transcript?.content;
+    if (!text) {
+      toast.error('No content available to regenerate quiz');
+      return;
+    }
+
+    setIsRegenerating(true);
+    setSubmitted(false);
+    setShowAnswers(false);
+    
+    try {
+      const quizQuestions = await generateQuiz(text);
+      setQuiz(fileId, {
+        id: `q-${fileId}`,
+        fileId,
+        questions: quizQuestions,
+        generatedAt: new Date(),
+      });
+      toast.success('Quiz regenerated!');
+    } catch (error) {
+      toast.error('Failed to regenerate quiz');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   if (!quiz) {
     return (
@@ -54,6 +87,19 @@ export function QuizView({ fileId }: QuizViewProps) {
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display font-bold text-2xl text-foreground">Quiz</h1>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+          >
+            {isRegenerating ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Regenerate
+          </Button>
           <Button
             variant="outline"
             size="sm"

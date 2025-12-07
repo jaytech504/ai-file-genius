@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
 import { ChatMessage } from '@/types';
 import { cn } from '@/lib/utils';
+import { streamChat } from '@/lib/processingService';
+import { toast } from 'sonner';
 
 interface ChatbotViewProps {
   fileId: string;
@@ -14,11 +16,14 @@ interface ChatbotViewProps {
 export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const messages = useFileStore((state) => state.getChatMessages(fileId));
   const addChatMessage = useFileStore((state) => state.addChatMessage);
   const file = useFileStore((state) => state.files.find((f) => f.id === fileId));
+  const extractedText = useFileStore((state) => state.getExtractedText(fileId));
+  const transcript = useFileStore((state) => state.getTranscript(fileId));
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -26,11 +31,13 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    const context = extractedText || transcript?.content || '';
+    
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -41,18 +48,43 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
     addChatMessage(fileId, userMessage);
     setInput('');
     setIsLoading(true);
+    setStreamingContent('');
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Based on the content of "${file?.name}", I can help answer your question. This is a demo response - connect to Lovable Cloud to enable real AI responses using the file's content.`,
-        timestamp: new Date(),
-      };
-      addChatMessage(fileId, aiMessage);
+    try {
+      const chatMessages = [...messages, userMessage].map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
+
+      let fullResponse = '';
+      
+      await streamChat(
+        chatMessages,
+        context,
+        (delta) => {
+          fullResponse += delta;
+          setStreamingContent(fullResponse);
+        },
+        () => {
+          const aiMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: fullResponse,
+            timestamp: new Date(),
+          };
+          addChatMessage(fileId, aiMessage);
+          setStreamingContent('');
+          setIsLoading(false);
+        }
+      );
+    } catch (error) {
+      console.error('Chat error:', error);
+      toast.error('Failed to get response', {
+        description: error instanceof Error ? error.message : 'An error occurred',
+      });
       setIsLoading(false);
-    }, 1500);
+      setStreamingContent('');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -61,6 +93,10 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
       handleSend();
     }
   };
+
+  const displayMessages = streamingContent 
+    ? [...messages, { id: 'streaming', role: 'assistant' as const, content: streamingContent, timestamp: new Date() }]
+    : messages;
 
   return (
     <div className={cn(
@@ -80,7 +116,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
         'flex-1 overflow-y-auto scrollbar-thin',
         embedded ? 'px-4' : 'card-elevated p-4'
       )}>
-        {messages.length === 0 ? (
+        {displayMessages.length === 0 && !isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
             <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center mb-3">
               <Bot className="w-6 h-6 text-accent-foreground" />
@@ -93,7 +129,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
         ) : (
           <div className="space-y-4">
             <AnimatePresence initial={false}>
-              {messages.map((message) => (
+              {displayMessages.map((message) => (
                 <motion.div
                   key={message.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -122,12 +158,12 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
                       message.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
                     )}
                   >
-                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                   </div>
                 </motion.div>
               ))}
             </AnimatePresence>
-            {isLoading && (
+            {isLoading && !streamingContent && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

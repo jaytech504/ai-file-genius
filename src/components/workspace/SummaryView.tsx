@@ -1,14 +1,46 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, FileText } from 'lucide-react';
+import { RefreshCw, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
+import { generateSummary } from '@/lib/processingService';
+import { toast } from 'sonner';
 
 interface SummaryViewProps {
   fileId: string;
 }
 
 export function SummaryView({ fileId }: SummaryViewProps) {
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const summary = useFileStore((state) => state.getSummary(fileId));
+  const extractedText = useFileStore((state) => state.getExtractedText(fileId));
+  const transcript = useFileStore((state) => state.getTranscript(fileId));
+  const setSummary = useFileStore((state) => state.setSummary);
+
+  const handleRegenerate = async () => {
+    const text = extractedText || transcript?.content;
+    if (!text) {
+      toast.error('No content available to regenerate summary');
+      return;
+    }
+
+    setIsRegenerating(true);
+    try {
+      const summaryData = await generateSummary(text);
+      setSummary(fileId, {
+        id: `s-${fileId}`,
+        fileId,
+        content: summaryData.title,
+        sections: summaryData.sections,
+        generatedAt: new Date(),
+      });
+      toast.success('Summary regenerated!');
+    } catch (error) {
+      toast.error('Failed to regenerate summary');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   if (!summary) {
     return (
@@ -34,8 +66,17 @@ export function SummaryView({ fileId }: SummaryViewProps) {
     >
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display font-bold text-2xl text-foreground">Summary</h1>
-        <Button variant="outline" size="sm">
-          <RefreshCw className="w-4 h-4 mr-2" />
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleRegenerate}
+          disabled={isRegenerating}
+        >
+          {isRegenerating ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 mr-2" />
+          )}
           Regenerate
         </Button>
       </div>
