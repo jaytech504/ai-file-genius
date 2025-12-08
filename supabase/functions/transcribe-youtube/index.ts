@@ -42,20 +42,25 @@ serve(async (req) => {
 
     console.log('Fetching transcript for video:', videoId);
 
-    // Call TranscriptAPI
-    const response = await fetch(`https://api.transcriptapi.io/v1/transcript?video_id=${videoId}`, {
+    // Call youtube-transcript.io API
+    const response = await fetch('https://www.youtube-transcript.io/api/transcripts', {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${TRANSCRIPT_API_KEY}`,
+        'Authorization': `Basic ${TRANSCRIPT_API_KEY}`,
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ ids: [videoId] }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('TranscriptAPI error:', response.status, error);
+      console.error('YouTube Transcript API error:', response.status, error);
       
       if (response.status === 404) {
         throw new Error('No transcript available for this video');
+      }
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please try again later.');
       }
       throw new Error('Failed to fetch transcript');
     }
@@ -64,18 +69,25 @@ serve(async (req) => {
     
     console.log('Transcript fetched successfully');
 
-    // Format the transcript
+    // Extract transcript text from the response
     let fullTranscript = '';
-    if (data.transcript && Array.isArray(data.transcript)) {
-      fullTranscript = data.transcript.map((item: any) => item.text).join(' ');
-    } else if (data.text) {
-      fullTranscript = data.text;
+    if (Array.isArray(data) && data.length > 0 && data[0].transcript) {
+      // The API returns an array of results, one per video ID
+      const videoData = data[0];
+      if (Array.isArray(videoData.transcript)) {
+        fullTranscript = videoData.transcript.map((item: any) => item.text).join(' ');
+      } else if (typeof videoData.transcript === 'string') {
+        fullTranscript = videoData.transcript;
+      }
+    }
+
+    if (!fullTranscript) {
+      throw new Error('No transcript content found for this video');
     }
 
     return new Response(JSON.stringify({ 
       transcript: fullTranscript,
       videoId,
-      segments: data.transcript || [],
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
