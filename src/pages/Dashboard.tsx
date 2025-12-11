@@ -88,20 +88,57 @@ export default function Dashboard() {
     });
 
     toast.info('Processing Audio...', {
-      description: 'This may take a few minutes for transcription.',
+      description: 'Uploading and transcribing. This may take a few minutes.',
     });
 
     try {
-      // For audio, we need to upload to storage first to get a URL
-      // For now, show a message about the requirement
-      toast.warning('Audio upload requires file storage', {
-        description: 'Please set up storage bucket to enable audio transcription.',
+      // Upload audio file to temp storage
+      const filePath = `${fileId}/${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('temp-audio')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      // Get public URL for the uploaded file
+      const { data: { publicUrl } } = supabase.storage
+        .from('temp-audio')
+        .getPublicUrl(filePath);
+
+      console.log('Audio uploaded, transcribing from:', publicUrl);
+
+      // Transcribe the audio
+      const { data: transcriptData, error: transcriptError } = await supabase.functions.invoke('transcribe-audio', {
+        body: { audioUrl: publicUrl }
       });
-      updateFileStatus(fileId, 'error');
+
+      if (transcriptError || transcriptData?.error) {
+        throw new Error(transcriptData?.error || transcriptError?.message || 'Transcription failed');
+      }
+
+      const transcript = transcriptData.transcript;
+      
+      // Save extracted text and transcript
+      setExtractedText(fileId, transcript);
+      setTranscript(fileId, {
+        id: `t-${fileId}`,
+        fileId,
+        content: transcript,
+        generatedAt: new Date(),
+      });
+
+      await processFile(fileId, transcript, 'audio');
+
+      // Clean up: delete temp file after processing
+      await supabase.storage.from('temp-audio').remove([filePath]);
     } catch (error) {
       console.error('Audio processing error:', error);
       updateFileStatus(fileId, 'error');
-      toast.error('Failed to process audio file');
+      toast.error('Failed to process audio file', {
+        description: error instanceof Error ? error.message : 'An error occurred',
+      });
     }
   };
 
