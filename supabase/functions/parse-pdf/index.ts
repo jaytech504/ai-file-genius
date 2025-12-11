@@ -18,53 +18,71 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Decode base64 to binary
-    const binaryString = atob(pdfBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    // Basic PDF text extraction - look for text streams
-    const pdfString = new TextDecoder('latin1').decode(bytes);
-    
-    // Extract text between stream and endstream markers
-    const textParts: string[] = [];
-    const streamRegex = /stream\s*([\s\S]*?)\s*endstream/g;
-    let match;
-    
-    while ((match = streamRegex.exec(pdfString)) !== null) {
-      const content = match[1];
-      // Look for text operators (Tj, TJ, ')
-      const textMatches = content.match(/\((.*?)\)\s*Tj|\[(.*?)\]\s*TJ/g);
-      if (textMatches) {
-        for (const tm of textMatches) {
-          // Extract text from parentheses
-          const textInParens = tm.match(/\((.*?)\)/g);
-          if (textInParens) {
-            for (const t of textInParens) {
-              const text = t.slice(1, -1);
-              if (text && !/^[\x00-\x1F]+$/.test(text)) {
-                textParts.push(text);
+    console.log('Sending PDF to Lovable AI for text extraction...');
+
+    // Use Lovable AI (Gemini) to extract text from PDF
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a document text extractor. Extract ALL text content from the provided PDF document. Preserve the structure, headings, paragraphs, and any lists. Return ONLY the extracted text without any commentary or explanation.'
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract all text from this PDF document. Return only the extracted text content.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${pdfBase64}`
+                }
               }
-            }
+            ]
           }
-        }
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Lovable AI error:', response.status, errorText);
+      
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+      
+      throw new Error(`AI extraction failed: ${errorText}`);
     }
 
-    let extractedText = textParts.join(' ').trim();
-    
-    // Clean up the text
-    extractedText = extractedText
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const data = await response.json();
+    const extractedText = data.choices?.[0]?.message?.content || '';
 
     if (!extractedText) {
-      extractedText = 'Unable to extract text from this PDF. The PDF may contain images or use encoding that requires advanced parsing.';
+      return new Response(
+        JSON.stringify({ error: 'No text could be extracted from the PDF' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+
+    console.log('Successfully extracted text, length:', extractedText.length);
 
     return new Response(
       JSON.stringify({ text: extractedText }),
