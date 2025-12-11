@@ -42,25 +42,26 @@ serve(async (req) => {
 
     console.log('Fetching transcript for video:', videoId);
 
-    // Call youtube-transcript.io API
-    const response = await fetch('https://www.youtube-transcript.io/api/transcripts', {
-      method: 'POST',
+    // Call transcriptapi.com API
+    const response = await fetch(`https://transcriptapi.com/api/v2/youtube/transcript?video_url=${videoId}`, {
+      method: 'GET',
       headers: {
-        'Authorization': `Basic ${TRANSCRIPT_API_KEY}`,
-        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TRANSCRIPT_API_KEY}`,
       },
-      body: JSON.stringify({ ids: [videoId] }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('YouTube Transcript API error:', response.status, error);
+      console.error('TranscriptAPI error:', response.status, error);
       
       if (response.status === 404) {
         throw new Error('No transcript available for this video');
       }
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please try again later.');
+      }
+      if (response.status === 401) {
+        throw new Error('Invalid API key');
       }
       throw new Error('Failed to fetch transcript');
     }
@@ -71,14 +72,10 @@ serve(async (req) => {
 
     // Extract transcript text from the response
     let fullTranscript = '';
-    if (Array.isArray(data) && data.length > 0 && data[0].transcript) {
-      // The API returns an array of results, one per video ID
-      const videoData = data[0];
-      if (Array.isArray(videoData.transcript)) {
-        fullTranscript = videoData.transcript.map((item: any) => item.text).join(' ');
-      } else if (typeof videoData.transcript === 'string') {
-        fullTranscript = videoData.transcript;
-      }
+    if (data.transcript && Array.isArray(data.transcript)) {
+      fullTranscript = data.transcript.map((item: any) => item.text).join(' ');
+    } else if (typeof data.transcript === 'string') {
+      fullTranscript = data.transcript;
     }
 
     if (!fullTranscript) {
