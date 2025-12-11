@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,18 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
   const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  const messages = useFileStore((state) => state.getChatMessages(fileId));
+  // Use stable selectors that access state properties directly
+  const chatMessages = useFileStore((state) => state.chatMessages);
+  const files = useFileStore((state) => state.files);
+  const extractedTexts = useFileStore((state) => state.extractedTexts);
+  const transcripts = useFileStore((state) => state.transcripts);
   const addChatMessage = useFileStore((state) => state.addChatMessage);
-  const file = useFileStore((state) => state.files.find((f) => f.id === fileId));
-  const extractedText = useFileStore((state) => state.getExtractedText(fileId));
-  const transcript = useFileStore((state) => state.getTranscript(fileId));
+  
+  // Derive values with useMemo for stable references
+  const messages = useMemo(() => chatMessages[fileId] || [], [chatMessages, fileId]);
+  const file = useMemo(() => files.find((f) => f.id === fileId), [files, fileId]);
+  const extractedText = useMemo(() => extractedTexts[fileId], [extractedTexts, fileId]);
+  const transcript = useMemo(() => transcripts[fileId], [transcripts, fileId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
