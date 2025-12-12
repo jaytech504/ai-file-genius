@@ -1,17 +1,30 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, FileText, Settings, LogOut, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: FileText, label: 'Your Notes', path: '/notes' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
 export function MainSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast.error('Failed to sign out');
+    } else {
+      navigate('/');
+    }
+  };
 
   if (isMobile) {
     return null;
@@ -54,7 +67,10 @@ export function MainSidebar() {
 
       {/* Logout */}
       <div className="p-4 border-t border-border">
-        <button className="sidebar-item w-full text-left hover:text-destructive">
+        <button 
+          onClick={handleLogout}
+          className="sidebar-item w-full text-left hover:text-destructive"
+        >
           <LogOut className="w-5 h-5" />
           <span>Logout</span>
         </button>
