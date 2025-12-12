@@ -7,7 +7,6 @@ import { TranscriptView } from '@/components/workspace/TranscriptView';
 import { QuizView } from '@/components/workspace/QuizView';
 import { ChatbotView } from '@/components/workspace/ChatbotView';
 import { ChatDock } from '@/components/workspace/ChatDock';
-import { MainSidebar } from '@/components/layout/MainSidebar';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { useFileStore } from '@/stores/fileStore';
 import { useUserData } from '@/hooks/useUserData';
@@ -77,10 +76,9 @@ export default function Workspace() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MainSidebar />
       <MobileNav />
 
-      <div className={isMobile ? 'pt-14 pb-16' : 'ml-64'}>
+      <div className={isMobile ? 'pt-14 pb-16' : ''}>
         {/* Mobile header with back button */}
         {isMobile && (
           <div className="p-4 border-b border-border bg-card">

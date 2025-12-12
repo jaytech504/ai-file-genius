@@ -35,7 +35,7 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `You are an expert content summarizer. Create a well-structured summary with multiple sections. 
+            content: `You are an expert educational summarizer. Create a well-structured summary with multiple sections. 
             
 Return your response as a JSON object with this structure:
 {
@@ -49,7 +49,7 @@ Return your response as a JSON object with this structure:
   ]
 }
 
-Create 3-5 sections covering key themes, main points, and conclusions. Each section should have 2-4 bullet points.`
+Create 3-5 sections based on the length of the text covering key themes, main points, and conclusions. Each section should have 3-4 bullet points.`
           },
           {
             role: 'user',

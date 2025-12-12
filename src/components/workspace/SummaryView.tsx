@@ -94,7 +94,7 @@ export function SummaryView({ fileId }: SummaryViewProps) {
           {summary.content}
         </p>
 
-        <div className="space-y-8">
+        <div className="space-y-6">
           {summary.sections.map((section, index) => (
             <motion.section
               key={index}

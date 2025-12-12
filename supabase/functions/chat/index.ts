@@ -26,7 +26,7 @@ serve(async (req) => {
 
     const systemPrompt = context 
       ? `You are a helpful AI assistant that answers questions based on the following document content. 
-Only use information from this document to answer questions. If the answer isn't in the document, say so.
+Answer any question as long as it is related to the document content.
 Be concise but thorough in your responses.
 
 Document content:
