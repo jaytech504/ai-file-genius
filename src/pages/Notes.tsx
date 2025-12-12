@@ -1,11 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FileText, Music, Youtube, Clock, Trash2, ChevronRight } from 'lucide-react';
+import { FileText, Music, Youtube, Clock, Trash2, ChevronRight, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
+import { useUserData } from '@/hooks/useUserData';
+import { deleteUploadedFile } from '@/lib/dataService';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
+import { useState } from 'react';
 
 const fileIcons = {
   pdf: FileText,
@@ -20,8 +24,41 @@ const fileColors = {
 };
 
 export default function Notes() {
-  const { files } = useFileStore();
+  const { files, removeFile } = useFileStore();
+  const { isLoading } = useUserData();
   const navigate = useNavigate();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (fileId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (deletingId) return;
+    
+    setDeletingId(fileId);
+    try {
+      await deleteUploadedFile(fileId);
+      removeFile(fileId);
+      toast.success('File deleted');
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      toast.error('Failed to delete file');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="p-6 lg:p-8 max-w-4xl mx-auto flex items-center justify-center min-h-[50vh]">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Loading your files...
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -46,7 +83,7 @@ export default function Notes() {
             <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
               Upload your first file from the dashboard to get started.
             </p>
-            <Button onClick={() => navigate('/')}>
+            <Button onClick={() => navigate('/dashboard')}>
               Go to Dashboard
             </Button>
           </div>
@@ -55,6 +92,7 @@ export default function Notes() {
             {files.map((file, index) => {
               const Icon = fileIcons[file.type];
               const colorClass = fileColors[file.type];
+              const isDeleting = deletingId === file.id;
 
               return (
                 <motion.div
@@ -62,7 +100,10 @@ export default function Notes() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="card-interactive p-5 flex items-center gap-4"
+                  className={cn(
+                    "card-interactive p-5 flex items-center gap-4",
+                    isDeleting && "opacity-50 pointer-events-none"
+                  )}
                   onClick={() => navigate(`/workspace/${file.id}`)}
                 >
                   <div className={cn('w-14 h-14 rounded-xl flex items-center justify-center', colorClass)}>
@@ -86,12 +127,14 @@ export default function Notes() {
                     variant="ghost"
                     size="icon"
                     className="text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // TODO: Implement delete
-                    }}
+                    onClick={(e) => handleDelete(file.id, e)}
+                    disabled={isDeleting}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {isDeleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                   </Button>
 
                   <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
