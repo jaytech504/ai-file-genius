@@ -3,12 +3,18 @@ import { Layout } from '@/components/layout/Layout';
 import { UploadCard } from '@/components/dashboard/UploadCard';
 import { FileList } from '@/components/dashboard/FileList';
 import { useFileStore } from '@/stores/fileStore';
+import { useAuth } from '@/hooks/useAuth';
+import { useUserData } from '@/hooks/useUserData';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
 import { extractPdfText, transcribeYoutube, generateSummary, generateQuiz } from '@/lib/processingService';
 import { supabase } from '@/integrations/supabase/client';
+import { saveUploadedFile, updateFileData, saveChatMessage } from '@/lib/dataService';
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const { isLoading } = useUserData();
+  
   const addFile = useFileStore((state) => state.addFile);
   const updateFileStatus = useFileStore((state) => state.updateFileStatus);
   const setExtractedText = useFileStore((state) => state.setExtractedText);
@@ -20,21 +26,29 @@ export default function Dashboard() {
     try {
       // Generate summary
       const summaryData = await generateSummary(text);
-      setSummary(fileId, {
+      const summary = {
         id: `s-${fileId}`,
         fileId,
         content: summaryData.title,
         sections: summaryData.sections,
         generatedAt: new Date(),
-      });
+      };
+      setSummary(fileId, summary);
 
       // Generate quiz
       const quizQuestions = await generateQuiz(text);
-      setQuiz(fileId, {
+      const quiz = {
         id: `q-${fileId}`,
         fileId,
         questions: quizQuestions,
         generatedAt: new Date(),
+      };
+      setQuiz(fileId, quiz);
+
+      // Save summary and quiz to database
+      await updateFileData(fileId, {
+        summary: JSON.stringify({ title: summaryData.title, sections: summaryData.sections }),
+        quiz: { questions: quizQuestions } as any,
       });
 
       updateFileStatus(fileId, 'ready');
@@ -51,15 +65,25 @@ export default function Dashboard() {
   };
 
   const handlePdfUpload = async (file: File) => {
-    const fileId = uuidv4();
+    if (!user) return;
     
-    addFile({
+    const fileId = uuidv4();
+    const uploadedFile = {
       id: fileId,
       name: file.name,
-      type: 'pdf',
+      type: 'pdf' as const,
       uploadedAt: new Date(),
-      status: 'processing',
-    });
+      status: 'processing' as const,
+    };
+    
+    addFile(uploadedFile);
+    
+    // Save to database
+    try {
+      await saveUploadedFile(uploadedFile, user.id);
+    } catch (error) {
+      console.error('Failed to save file to database:', error);
+    }
 
     toast.info('Processing PDF...', {
       description: 'Extracting text and generating insights.',
@@ -68,6 +92,10 @@ export default function Dashboard() {
     try {
       const text = await extractPdfText(file);
       setExtractedText(fileId, text);
+      
+      // Save extracted text to database
+      await updateFileData(fileId, { extracted_text: text });
+      
       await processFile(fileId, text, 'pdf');
     } catch (error) {
       console.error('PDF extraction error:', error);
@@ -77,15 +105,25 @@ export default function Dashboard() {
   };
 
   const handleAudioUpload = async (file: File) => {
-    const fileId = uuidv4();
+    if (!user) return;
     
-    addFile({
+    const fileId = uuidv4();
+    const uploadedFile = {
       id: fileId,
       name: file.name,
-      type: 'audio',
+      type: 'audio' as const,
       uploadedAt: new Date(),
-      status: 'processing',
-    });
+      status: 'processing' as const,
+    };
+    
+    addFile(uploadedFile);
+
+    // Save to database
+    try {
+      await saveUploadedFile(uploadedFile, user.id);
+    } catch (error) {
+      console.error('Failed to save file to database:', error);
+    }
 
     toast.info('Processing Audio...', {
       description: 'Uploading and transcribing. This may take a few minutes.',
@@ -129,6 +167,12 @@ export default function Dashboard() {
         generatedAt: new Date(),
       });
 
+      // Save to database
+      await updateFileData(fileId, { 
+        extracted_text: transcript,
+        transcript: transcript,
+      });
+
       await processFile(fileId, transcript, 'audio');
 
       // Clean up: delete temp file after processing
@@ -143,15 +187,25 @@ export default function Dashboard() {
   };
 
   const handleYoutubeUpload = async (url: string) => {
-    const fileId = uuidv4();
+    if (!user) return;
     
-    addFile({
+    const fileId = uuidv4();
+    const uploadedFile = {
       id: fileId,
       name: url,
-      type: 'youtube',
+      type: 'youtube' as const,
       uploadedAt: new Date(),
-      status: 'processing',
-    });
+      status: 'processing' as const,
+    };
+    
+    addFile(uploadedFile);
+
+    // Save to database
+    try {
+      await saveUploadedFile(uploadedFile, user.id);
+    } catch (error) {
+      console.error('Failed to save file to database:', error);
+    }
 
     toast.info('Processing YouTube video...', {
       description: 'Fetching transcript and generating insights.',
@@ -166,6 +220,13 @@ export default function Dashboard() {
         content: transcript,
         generatedAt: new Date(),
       });
+
+      // Save to database
+      await updateFileData(fileId, { 
+        extracted_text: transcript,
+        transcript: transcript,
+      });
+
       await processFile(fileId, transcript, 'youtube');
     } catch (error) {
       console.error('YouTube transcription error:', error);
@@ -185,6 +246,16 @@ export default function Dashboard() {
       handleYoutubeUpload(fileOrUrl);
     }
   };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="p-6 lg:p-8 max-w-6xl mx-auto flex items-center justify-center min-h-[50vh]">
+          <div className="text-muted-foreground">Loading your files...</div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>

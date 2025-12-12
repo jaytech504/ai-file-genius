@@ -10,15 +10,17 @@ import { ChatDock } from '@/components/workspace/ChatDock';
 import { MainSidebar } from '@/components/layout/MainSidebar';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { useFileStore } from '@/stores/fileStore';
+import { useUserData } from '@/hooks/useUserData';
 import { WorkspaceSection } from '@/types';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function Workspace() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState<WorkspaceSection>('summary');
+  const { isLoading } = useUserData();
 
   const file = useFileStore((state) => state.files.find((f) => f.id === fileId));
   const setActiveFile = useFileStore((state) => state.setActiveFile);
@@ -30,6 +32,17 @@ export default function Workspace() {
     return () => setActiveFile(null);
   }, [fileId, setActiveFile]);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
   if (!file) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -37,7 +50,7 @@ export default function Workspace() {
           <h2 className="font-display font-bold text-2xl text-foreground mb-2">File not found</h2>
           <p className="text-muted-foreground mb-4">The requested file could not be found.</p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/dashboard')}
             className="text-primary hover:underline"
           >
             Return to Dashboard

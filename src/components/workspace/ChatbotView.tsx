@@ -3,9 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
+import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage } from '@/types';
 import { cn } from '@/lib/utils';
 import { streamChat } from '@/lib/processingService';
+import { saveChatMessage } from '@/lib/dataService';
 import { toast } from 'sonner';
 
 interface ChatbotViewProps {
@@ -18,6 +20,8 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  const { user } = useAuth();
   
   // Use stable selectors that access state properties directly
   const chatMessages = useFileStore((state) => state.chatMessages);
@@ -41,7 +45,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
   }, [messages, streamingContent]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !user) return;
 
     const context = extractedText || transcript?.content || '';
     
@@ -53,6 +57,14 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
     };
 
     addChatMessage(fileId, userMessage);
+    
+    // Save user message to database
+    try {
+      await saveChatMessage(fileId, user.id, userMessage);
+    } catch (error) {
+      console.error('Failed to save user message:', error);
+    }
+    
     setInput('');
     setIsLoading(true);
     setStreamingContent('');
@@ -72,7 +84,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
           fullResponse += delta;
           setStreamingContent(fullResponse);
         },
-        () => {
+        async () => {
           const aiMessage: ChatMessage = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
@@ -80,6 +92,14 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
             timestamp: new Date(),
           };
           addChatMessage(fileId, aiMessage);
+          
+          // Save AI message to database
+          try {
+            await saveChatMessage(fileId, user.id, aiMessage);
+          } catch (error) {
+            console.error('Failed to save AI message:', error);
+          }
+          
           setStreamingContent('');
           setIsLoading(false);
         }

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { QuizQuestion } from '@/types';
 import { toast } from 'sonner';
 import { generateQuiz } from '@/lib/processingService';
+import { updateFileData } from '@/lib/dataService';
 
 interface QuizViewProps {
   fileId: string;
@@ -36,12 +37,19 @@ export function QuizView({ fileId }: QuizViewProps) {
     
     try {
       const quizQuestions = await generateQuiz(text);
-      setQuiz(fileId, {
+      const newQuiz = {
         id: `q-${fileId}`,
         fileId,
         questions: quizQuestions,
         generatedAt: new Date(),
+      };
+      setQuiz(fileId, newQuiz);
+      
+      // Save to database
+      await updateFileData(fileId, {
+        quiz: { questions: quizQuestions } as any,
       });
+      
       toast.success('Quiz regenerated!');
     } catch (error) {
       toast.error('Failed to regenerate quiz');

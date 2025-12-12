@@ -4,6 +4,7 @@ import { RefreshCw, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFileStore } from '@/stores/fileStore';
 import { generateSummary } from '@/lib/processingService';
+import { updateFileData } from '@/lib/dataService';
 import { toast } from 'sonner';
 
 interface SummaryViewProps {
@@ -27,13 +28,20 @@ export function SummaryView({ fileId }: SummaryViewProps) {
     setIsRegenerating(true);
     try {
       const summaryData = await generateSummary(text);
-      setSummary(fileId, {
+      const newSummary = {
         id: `s-${fileId}`,
         fileId,
         content: summaryData.title,
         sections: summaryData.sections,
         generatedAt: new Date(),
+      };
+      setSummary(fileId, newSummary);
+      
+      // Save to database
+      await updateFileData(fileId, {
+        summary: JSON.stringify({ title: summaryData.title, sections: summaryData.sections }),
       });
+      
       toast.success('Summary regenerated!');
     } catch (error) {
       toast.error('Failed to regenerate summary');
