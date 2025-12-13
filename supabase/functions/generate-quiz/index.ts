@@ -17,25 +17,14 @@ serve(async (req) => {
       throw new Error('No text provided');
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not configured');
     }
 
     console.log('Generating quiz for text of length:', text.length);
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert quiz generator. Create educational quizzes based on content.
+    const systemInstruction = `You are an expert quiz generator. Create educational quizzes based on content.
 
 Return your response as a JSON array of questions with this structure:
 [
@@ -65,37 +54,76 @@ Generate exactly 10 questions:
 - 3 true-false questions
 - 2 short-answer questions
 
-Questions should test comprehension of key concepts from the content.`
-          },
-          {
-            role: 'user',
-            content: `Generate a quiz based on the following content:\n\n${text.substring(0, 50000)}`
-          }
-        ],
-      }),
-    });
+Questions should test comprehension of key concepts from the content.`;
 
-    if (!response.ok) {
+    // Retry logic with exponential backoff
+    const maxRetries = 3;
+    let lastError: any = null;
+    let response: Response | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+        console.log(`Retry attempt ${attempt} after ${delay}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{ text: `Generate a quiz based on the following content:\n\n${text.substring(0, 50000)}` }]
+          }],
+          systemInstruction: {
+            parts: [{ text: systemInstruction }]
+          }
+        }),
+      });
+
+      if (response.ok) {
+        break; // Success, exit retry loop
+      }
+
       const errorText = await response.text();
-      console.error('AI gateway error:', response.status, errorText);
+      lastError = { status: response.status, text: errorText };
+      console.error(`Gemini API error (attempt ${attempt + 1}/${maxRetries + 1}):`, response.status, errorText);
+
+      // Don't retry on 400 (bad request) or 401 (unauthorized)
+      if (response.status === 400 || response.status === 401) {
+        break;
+      }
+
+      // Only retry on 429 (rate limit) or 500+ (server errors)
+      if (response.status !== 429 && response.status < 500) {
+        break;
+      }
+    }
+
+    if (!response || !response.ok) {
+      const status = lastError?.status || 500;
+      const errorText = lastError?.text || 'Unknown error';
       
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), {
+      if (status === 429) {
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again in a few moments.' }), {
           status: 429,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'AI credits exhausted. Please add credits to continue.' }), {
-          status: 402,
+      if (status === 400) {
+        return new Response(JSON.stringify({ error: 'Invalid request. Please check your API key and request format.' }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      throw new Error(`AI gateway error: ${response.status}`);
+      throw new Error(`Gemini API error: ${status}`);
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     console.log('AI response received');
 

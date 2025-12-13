@@ -18,62 +18,95 @@ Deno.serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not configured');
     }
 
-    console.log('Sending PDF to Lovable AI for text extraction...');
+    console.log('Sending PDF to Gemini API for text extraction...');
 
-    // Use Lovable AI (Gemini) to extract text from PDF
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a document text extractor. Extract ALL text content from the provided PDF document. Preserve the structure, headings, paragraphs, and any lists. Return ONLY the extracted text without any commentary or explanation.'
-          },
-          {
+    // Retry logic with exponential backoff
+    const maxRetries = 3;
+    let lastError: any = null;
+    let response: Response | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+        console.log(`Retry attempt ${attempt} after ${delay}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      // Use Gemini API to extract text from PDF
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
             role: 'user',
-            content: [
+            parts: [
               {
-                type: 'text',
                 text: 'Extract all text from this PDF document. Return only the extracted text content.'
               },
               {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${pdfBase64}`
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: pdfBase64
                 }
               }
             ]
+          }],
+          systemInstruction: {
+            parts: [{
+              text: 'You are a document text extractor. Extract ALL text content from the provided PDF document. Preserve the structure, headings, paragraphs, and any lists. Return ONLY the extracted text without any commentary or explanation.'
+            }]
           }
-        ],
-      }),
-    });
+        }),
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        break; // Success, exit retry loop
+      }
+
       const errorText = await response.text();
-      console.error('Lovable AI error:', response.status, errorText);
-      
-      if (response.status === 429) {
+      lastError = { status: response.status, text: errorText };
+      console.error(`Gemini API error (attempt ${attempt + 1}/${maxRetries + 1}):`, response.status, errorText);
+
+      // Don't retry on 400 (bad request) or 401 (unauthorized)
+      if (response.status === 400 || response.status === 401) {
+        break;
+      }
+
+      // Only retry on 429 (rate limit) or 500+ (server errors)
+      if (response.status !== 429 && response.status < 500) {
+        break;
+      }
+    }
+
+    if (!response || !response.ok) {
+      const status = lastError?.status || 500;
+      const errorText = lastError?.text || 'Unknown error';
+
+      if (status === 429) {
         return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+          JSON.stringify({ error: 'Rate limit exceeded. Please try again in a few moments.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      
-      throw new Error(`AI extraction failed: ${errorText}`);
+      if (status === 400) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid request. Please check your API key and request format.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      throw new Error(`Gemini API extraction failed: ${errorText}`);
     }
 
     const data = await response.json();
-    const extractedText = data.choices?.[0]?.message?.content || '';
+    const extractedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     if (!extractedText) {
       return new Response(
