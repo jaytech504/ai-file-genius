@@ -47,13 +47,7 @@ Upload your study materials or paste a YouTube link, and let AI help you underst
 git clone https://github.com/your-username/knowbite.git
 cd knowbite
 
-```bash
 npm install
 
-```bash
 npm run dev
 
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
