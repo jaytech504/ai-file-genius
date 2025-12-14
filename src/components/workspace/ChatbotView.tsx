@@ -6,9 +6,10 @@ import { useFileStore } from '@/stores/fileStore';
 import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage } from '@/types';
 import { cn } from '@/lib/utils';
-import { streamChat } from '@/lib/processingService';
+import { chat } from '@/lib/processingService';
 import { saveChatMessage } from '@/lib/dataService';
 import { toast } from 'sonner';
+import { v4 as uuidv4 } from 'uuid';
 
 interface ChatbotViewProps {
   fileId: string;
@@ -18,18 +19,17 @@ interface ChatbotViewProps {
 export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   const { user } = useAuth();
-  
+
   // Use stable selectors that access state properties directly
   const chatMessages = useFileStore((state) => state.chatMessages);
   const files = useFileStore((state) => state.files);
   const extractedTexts = useFileStore((state) => state.extractedTexts);
   const transcripts = useFileStore((state) => state.transcripts);
   const addChatMessage = useFileStore((state) => state.addChatMessage);
-  
+
   // Derive values with useMemo for stable references
   const messages = useMemo(() => chatMessages[fileId] || [], [chatMessages, fileId]);
   const file = useMemo(() => files.find((f) => f.id === fileId), [files, fileId]);
@@ -42,32 +42,34 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent]);
+  }, [messages]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading || !user) return;
 
     const context = extractedText || transcript?.content || '';
-    
+
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: uuidv4(),
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
     };
 
     addChatMessage(fileId, userMessage);
-    
+
     // Save user message to database
     try {
       await saveChatMessage(fileId, user.id, userMessage);
     } catch (error) {
       console.error('Failed to save user message:', error);
+      toast.error('Failed to save message', {
+        description: 'Your message may not be saved',
+      });
     }
-    
+
     setInput('');
     setIsLoading(true);
-    setStreamingContent('');
 
     try {
       const chatMessages = [...messages, userMessage].map(m => ({
@@ -75,42 +77,36 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
         content: m.content,
       }));
 
-      let fullResponse = '';
-      
-      await streamChat(
-        chatMessages,
-        context,
-        (delta) => {
-          fullResponse += delta;
-          setStreamingContent(fullResponse);
-        },
-        async () => {
-          const aiMessage: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: fullResponse,
-            timestamp: new Date(),
-          };
-          addChatMessage(fileId, aiMessage);
-          
-          // Save AI message to database
-          try {
-            await saveChatMessage(fileId, user.id, aiMessage);
-          } catch (error) {
-            console.error('Failed to save AI message:', error);
-          }
-          
-          setStreamingContent('');
-          setIsLoading(false);
-        }
-      );
+      // Get response from AI
+      const response = await chat(chatMessages, context);
+
+      // Create AI message with response
+      const aiMessage: ChatMessage = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: response,
+        timestamp: new Date(),
+      };
+
+      addChatMessage(fileId, aiMessage);
+
+      // Save AI message to database
+      try {
+        await saveChatMessage(fileId, user.id, aiMessage);
+      } catch (error) {
+        console.error('Failed to save AI message:', error);
+        toast.error('Failed to save response', {
+          description: 'The response may not be saved',
+        });
+      }
+
+      setIsLoading(false);
     } catch (error) {
       console.error('Chat error:', error);
       toast.error('Failed to get response', {
         description: error instanceof Error ? error.message : 'An error occurred',
       });
       setIsLoading(false);
-      setStreamingContent('');
     }
   };
 
@@ -121,9 +117,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
     }
   };
 
-  const displayMessages = streamingContent 
-    ? [...messages, { id: 'streaming', role: 'assistant' as const, content: streamingContent, timestamp: new Date() }]
-    : messages;
+  const displayMessages = messages;
 
   return (
     <div className={cn(
@@ -190,7 +184,7 @@ export function ChatbotView({ fileId, embedded = false }: ChatbotViewProps) {
                 </motion.div>
               ))}
             </AnimatePresence>
-            {isLoading && !streamingContent && (
+            {isLoading && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

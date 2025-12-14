@@ -25,10 +25,12 @@ serve(async (req) => {
     console.log('Processing chat with', messages.length, 'messages');
 
     const systemPrompt = context
-      ? `You are a helpful AI assistant that answers questions based on the following document content. 
-Answer any question as long as it is related to the document content.
-Be concise but thorough in your responses.
-
+      ? `You are a helpful teacher assisting students. Follow these rules:
+1. Answer using document summary and chat history as context but also add necessary related information if needed.
+2. Explain concepts in easy to understand terms and use relevant extra knowledge when helpful
+3. Keep some answers under 150 words unless necessary then up to 500 words.
+4. Be friendly and use occasional emojis
+5. If question is unrelated, politely decline
 Document content:
 ${context.substring(0, 30000)}`
       : `You are a helpful AI assistant. Be concise but thorough in your responses.`;
@@ -51,7 +53,7 @@ ${context.substring(0, 30000)}`
       }
     };
 
-    // Retry logic with exponential backoff for streaming
+    // Retry logic with exponential backoff
     const maxRetries = 3;
     let lastError: any = null;
     let response: Response | null = null;
@@ -63,7 +65,8 @@ ${context.substring(0, 30000)}`
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?key=${GEMINI_API_KEY}`, {
+      // Use non-streaming API
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,68 +112,21 @@ ${context.substring(0, 30000)}`
       throw new Error(`Gemini API error: ${status}`);
     }
 
-    // Convert Gemini streaming format to OpenAI SSE format
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
+    // Parse the response
+    const data = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    if (!reader) {
-      throw new Error('No response body');
+    if (!content) {
+      console.error('No content in Gemini response:', JSON.stringify(data));
+      return new Response(JSON.stringify({ error: 'No response from AI' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    let buffer = '';
-    let lastText = '';
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-              controller.close();
-              break;
-            }
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-            for (const line of lines) {
-              if (line.trim() === '') continue;
-
-              try {
-                const json = JSON.parse(line);
-                const candidate = json.candidates?.[0];
-                if (candidate) {
-                  const currentText = candidate.content?.parts?.[0]?.text || '';
-                  // Send only the new text (delta)
-                  if (currentText.length > lastText.length) {
-                    const delta = currentText.slice(lastText.length);
-                    lastText = currentText;
-
-                    const sseData = {
-                      choices: [{
-                        delta: { content: delta }
-                      }]
-                    };
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(sseData)}\n\n`));
-                  }
-                }
-              } catch (e) {
-                // Skip invalid JSON lines
-                continue;
-              }
-            }
-          }
-        } catch (error) {
-          controller.error(error);
-        }
-      }
-    });
-
-    return new Response(stream, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+    // Return simple JSON response
+    return new Response(JSON.stringify({ content }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error in chat function:', error);

@@ -25,7 +25,12 @@ serve(async (req) => {
     console.log('Generating summary for text of length:', text.length);
 
     const systemInstruction = `You are an expert educational summarizer. Create a well-structured summary with multiple sections. 
-            
+            - Use short paragraphs, lots of white space, and clear visual separation between sections.
+- Use modern, attractive formatting and layout throughout, like top-tier blogs (Medium, Notion, Substack).
+- Use css styled <table> for comparisons or data, <blockquote> and <div class='pro-tip'> for callouts, and <mark>, <b>, <i>, <u>, <code>, <span class='highlight'> for emphasis..
+- Use $...$ for inline math and formulas (LaTeX style).
+- Make the total summary length at least a 700 - 2000 words based on the text length
+- Make it elaborate and verbose.
 Return your response as a JSON object with this structure:
 {
   "title": "Main title of the summary",

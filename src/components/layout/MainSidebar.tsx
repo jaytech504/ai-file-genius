@@ -39,8 +39,8 @@ export function MainSidebar() {
             <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-lg text-foreground">DocuMind</h1>
-            <p className="text-xs text-muted-foreground">AI Document Assistant</p>
+            <h1 className="font-display font-bold text-lg text-foreground">KnowBite</h1>
+            <p className="text-xs text-muted-foreground">AI-powered study assistant</p>
           </div>
         </div>
       </div>

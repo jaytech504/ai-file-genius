@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Loader2, BookOpen } from 'lucide-react';
+import { Loader2, BookOpen, Sparkles } from 'lucide-react';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Please enter a valid email address');
@@ -101,14 +101,14 @@ export default function Auth() {
       <div className="w-full max-w-md animate-in">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
-            <BookOpen className="w-8 h-8 text-primary" />
+          <div className="w-10 h-10 inline-flex rounded-xl bg-primary flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <h1 className="font-display font-bold text-3xl text-foreground mb-2">
-            Study Assistant
+            KnowBite
           </h1>
           <p className="text-muted-foreground">
-            AI-powered learning from your documents
+            AI-powered study assistant
           </p>
         </div>
 

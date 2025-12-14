@@ -93,13 +93,11 @@ export async function generateQuiz(text: string): Promise<QuizQuestion[]> {
   return data.questions;
 }
 
-// Chat with AI about document content
-export async function streamChat(
+// Chat with AI about document content (non-streaming)
+export async function chat(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  context: string,
-  onDelta: (text: string) => void,
-  onDone: () => void
-): Promise<void> {
+  context: string
+): Promise<string> {
   const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
     method: 'POST',
     headers: {
@@ -114,47 +112,13 @@ export async function streamChat(
     throw new Error(errorData.error || 'Chat request failed');
   }
 
-  if (!response.body) {
-    throw new Error('No response body');
+  const data = await response.json();
+  
+  if (!data.content) {
+    throw new Error('No response content from AI');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    let newlineIndex: number;
-    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-      let line = buffer.slice(0, newlineIndex);
-      buffer = buffer.slice(newlineIndex + 1);
-
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      if (line.startsWith(':') || line.trim() === '') continue;
-      if (!line.startsWith('data: ')) continue;
-
-      const jsonStr = line.slice(6).trim();
-      if (jsonStr === '[DONE]') {
-        onDone();
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) onDelta(content);
-      } catch {
-        buffer = line + '\n' + buffer;
-        break;
-      }
-    }
-  }
-
-  onDone();
+  return data.content;
 }
 
 // Transcribe audio file using AssemblyAI
